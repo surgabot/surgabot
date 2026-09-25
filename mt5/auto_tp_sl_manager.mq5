@@ -1,11 +1,11 @@
 //+------------------------------------------------------------------+
-//|                                          AutoTP_SL_Exness.mq5    |
-//|                        Senior MQL5 Developer & Quant Trader      |
-//|                     Optimized for Exness High-Speed Trading      |
+//|                                     AutoTP_SL_Exness_Alert.mq5   |
+//|                          Senior MQL5 Developer & Quant Trader    |
+//|                   Optimized for Exness High-Speed Trading        |
 //+------------------------------------------------------------------+
 #property copyright "Senior MQL5 Developer"
 #property link      ""
-#property version   "1.20"
+#property version   "1.21"
 #property strict
 
 //--- Input Parameters (mudah diatur dari Properties EA)
@@ -13,6 +13,11 @@ input group "=== Pengaturan Take Profit & Stop Loss ==="
 input int      TP_Points          = 1000;     // Jarak Take Profit dalam Points (default 1000)
 input bool     Use_SL             = false;    // Aktifkan Stop Loss?
 input int      SL_Points          = 500;      // Jarak Stop Loss dalam Points (jika aktif)
+
+input group "=== Pengaturan Notifikasi / Alert ==="
+input bool     Enable_Alert       = true;     // Aktifkan Popup Alert di layar?
+input bool     Enable_Notification= false;    // Aktifkan Push Notification ke HP (MetaQuotes ID)?
+input bool     Enable_Email       = false;    // Aktifkan Email Notification?
 
 input group "=== Pengaturan Lanjutan ==="
 input int      Max_Retry          = 3;        // Jumlah maksimal retry jika gagal
@@ -25,7 +30,7 @@ input long     Magic_Number       = 0;        // 0 = proses semua posisi (manual
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   Print("=== Auto TP/SL Exness v1.20 berhasil dijalankan ===");
+   Print("=== Auto TP/SL Exness v1.21 (with Alert) berhasil dijalankan ===");
    Print("TP Points : ", TP_Points);
    Print("SL Aktif  : ", Use_SL ? "Ya" : "Tidak");
    if(Use_SL) Print("SL Points : ", SL_Points);
@@ -43,35 +48,70 @@ void OnDeinit(const int reason)
 }
 
 //+------------------------------------------------------------------+
-//| Trade Transaction Handler - DETEKSI PALING CEPAT                 |
+//| Trade Transaction Handler - DETEKSI POSISI MASUK & KELUAR (TP/SL)|
 //+------------------------------------------------------------------+
 void OnTradeTransaction(const MqlTradeTransaction& trans,
                         const MqlTradeRequest& request,
                         const MqlTradeResult& result)
 {
-   // Kita hanya peduli dengan transaksi penambahan deal (posisi baru)
    if(trans.type != TRADE_TRANSACTION_DEAL_ADD)
       return;
    
-   // Ambil detail deal
    ulong deal_ticket = trans.deal;
    if(deal_ticket == 0) return;
    
-   // Filter hanya deal yang membuka posisi (entry in)
    if(!HistoryDealSelect(deal_ticket)) return;
    
    long deal_entry = HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
-   if(deal_entry != DEAL_ENTRY_IN) return;   // Hanya posisi baru
+   long deal_type  = HistoryDealGetInteger(deal_ticket, DEAL_TYPE);
+   string symbol   = HistoryDealGetString(deal_ticket, DEAL_SYMBOL);
+   long magic      = HistoryDealGetInteger(deal_ticket, DEAL_MAGIC);
    
-   long deal_type = HistoryDealGetInteger(deal_ticket, DEAL_TYPE);
-   if(deal_type != DEAL_TYPE_BUY && deal_type != DEAL_TYPE_SELL) return;
+   // Filter Magic Number & Simbol
+   if(Magic_Number != 0 && magic != Magic_Number) return;
+   if(Only_Current_Symbol && symbol != _Symbol) return;
+
+   // 1. KASUS POSISI BARU MASUK (DEAL_ENTRY_IN) -> Set TP/SL
+   if(deal_entry == DEAL_ENTRY_IN && (deal_type == DEAL_TYPE_BUY || deal_type == DEAL_TYPE_SELL))
+   {
+      ulong position_ticket = HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID);
+      if(position_ticket != 0)
+         ProcessNewPosition(position_ticket);
+   }
    
-   // Ambil ticket posisi yang baru saja dibuka
-   ulong position_ticket = HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID);
-   if(position_ticket == 0) return;
-   
-   // Proses posisi baru
-   ProcessNewPosition(position_ticket);
+   // 2. KASUS POSISI KELUAR (DEAL_ENTRY_OUT) -> Deteksi TP / SL tersentuh
+   if(deal_entry == DEAL_ENTRY_OUT)
+   {
+      long deal_reason = HistoryDealGetInteger(deal_ticket, DEAL_REASON);
+      
+      if(deal_reason == DEAL_REASON_TP || deal_reason == DEAL_REASON_SL)
+      {
+         double profit = HistoryDealGetDouble(deal_ticket, DEAL_PROFIT) + 
+                         HistoryDealGetDouble(deal_ticket, DEAL_SWAP) + 
+                         HistoryDealGetDouble(deal_ticket, DEAL_COMMISSION);
+         
+         string status_type = (deal_reason == DEAL_REASON_TP) ? "🎯 TAKE PROFIT (TP)" : "❌ STOP LOSS (SL)";
+         string pos_str     = (deal_type == DEAL_TYPE_BUY) ? "BUY" : "SELL";
+         double price_close = HistoryDealGetDouble(deal_ticket, DEAL_PRICE);
+         ulong pos_id       = HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID);
+         
+         // Buat Pesan Notifikasi
+         string message = StringFormat("%s Tersentuh! [%s %s] | Ticket: %I64d | Harga: %.5f | Profit: $%.2f",
+                           status_type, pos_str, symbol, pos_id, price_close, profit);
+         
+         // Eksekusi Log & Alert
+         Print(message);
+         
+         if(Enable_Alert)
+            Alert(message);
+            
+         if(Enable_Notification)
+            SendNotification(message);
+            
+         if(Enable_Email)
+            SendMail("AutoTP_SL Alert: " + symbol, message);
+      }
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -85,39 +125,30 @@ void ProcessNewPosition(ulong position_ticket)
       return;
    }
    
-   string symbol     = PositionGetString(POSITION_SYMBOL);
-   long   magic      = PositionGetInteger(POSITION_MAGIC);
-   double open_price = PositionGetDouble(POSITION_PRICE_OPEN);
-   long   pos_type   = PositionGetInteger(POSITION_TYPE);
-   double current_tp = PositionGetDouble(POSITION_TP);
-   double current_sl = PositionGetDouble(POSITION_SL);
+   string symbol      = PositionGetString(POSITION_SYMBOL);
+   long   magic       = PositionGetInteger(POSITION_MAGIC);
+   double open_price  = PositionGetDouble(POSITION_PRICE_OPEN);
+   long   pos_type    = PositionGetInteger(POSITION_TYPE);
+   double current_tp  = PositionGetDouble(POSITION_TP);
    
-   // Filter Magic Number
    if(Magic_Number != 0 && magic != Magic_Number) return;
-   
-   // Filter hanya simbol chart (jika diaktifkan)
    if(Only_Current_Symbol && symbol != _Symbol) return;
    
-   // Jika sudah ada TP yang valid, skip (hindari overwrite)
    if(current_tp > 0)
    {
-      // Opsional: uncomment baris di bawah jika ingin selalu overwrite
-      // Print("Posisi #", position_ticket, " sudah memiliki TP. Dilewati.");
-      // return;
+      // Sudah ada TP, dilewati
+      return;
    }
    
-   // Hitung nilai point yang benar untuk simbol ini (penting untuk XAUUSD 3 digit)
    double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
    int    digits = (int)SymbolInfoInteger(symbol, SYMBOL_DIGITS);
    
-   // Hitung harga TP
    double tp_price = 0.0;
    if(pos_type == POSITION_TYPE_BUY)
       tp_price = NormalizeDouble(open_price + TP_Points * point, digits);
-   else // SELL
+   else 
       tp_price = NormalizeDouble(open_price - TP_Points * point, digits);
    
-   // Hitung harga SL (jika diaktifkan)
    double sl_price = 0.0;
    if(Use_SL)
    {
@@ -127,7 +158,6 @@ void ProcessNewPosition(ulong position_ticket)
          sl_price = NormalizeDouble(open_price + SL_Points * point, digits);
    }
    
-   // Lakukan modifikasi dengan retry
    bool success = false;
    for(int attempt = 1; attempt <= Max_Retry; attempt++)
    {
@@ -136,8 +166,6 @@ void ProcessNewPosition(ulong position_ticket)
          success = true;
          break;
       }
-      
-      // Jika gagal, tunggu sebentar lalu retry
       if(attempt < Max_Retry)
          Sleep(Retry_Delay_ms);
    }
@@ -173,13 +201,10 @@ bool ModifyPosition(ulong ticket, double sl, double tp, string symbol)
    request.tp       = tp;
    request.magic    = Magic_Number;
    
-   // Kirim request
    bool sent = OrderSend(request, result);
    
    if(!sent || result.retcode != TRADE_RETCODE_DONE)
    {
-      // Log error detail
-      // Print("Modify gagal | Retcode: ", result.retcode, " | Error: ", GetLastError());
       return false;
    }
    
@@ -187,10 +212,9 @@ bool ModifyPosition(ulong ticket, double sl, double tp, string symbol)
 }
 
 //+------------------------------------------------------------------+
-//| Optional: OnTick sebagai cadangan (biasanya tidak diperlukan)    |
+//| OnTick                                                           |
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // Kosongkan - OnTradeTransaction sudah sangat cepat dan efisien.
-   // Jangan taruh logic berat di sini agar latency tetap rendah.
+   // Kosongkan - efisiensi tinggi terjaga via OnTradeTransaction.
 }
