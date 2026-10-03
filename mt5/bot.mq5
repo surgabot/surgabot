@@ -14,12 +14,8 @@
 //+------------------------------------------------------------------+
 //| [1] Parameter Input                                              |
 //+------------------------------------------------------------------+
-input group "=== PENGATURAN TAMPILAN PANEL (WIDESCREEN ANTI TUMPUK) ==="
-input int             InpWidth            = 430;   // Lebar Panel HUD (Pixel)
-input int             InpX                = 25;    // Posisi X dari kiri layar (Pixel)
-input int             InpY                = 35;    // Posisi Y dari atas layar (Pixel)
 
-input group "=== PENGATURAN TRADING CEPAT (ONE-CLICK) ==="
+input group "=== PENGATURAN LOT TRADING CEPAT (ONE-CLICK) ==="
 input double          InpDefaultLot       = 0.01;  // Ukuran Lot Default
 input double          InpLotStep          = 0.01;  // Nilai Tambah/Kurang Lot tombol [-] [+]
 
@@ -30,7 +26,7 @@ input bool            InpEnableTrailingBE = true;  // 🏃 Aktifkan Trailing Bre
 input int             InpTrailingStartPts = 50;    // Jarak Profit (pts) untuk Mulai Aktifkan Trailing
 input int             InpTrailingLockPts  = 15;    // Kunci Minimal Profit (pts) saat harga retrace
 
-input group "=== PENGATURAN AUTO TP & SL (EXNESS READY) ==="
+input group "=== PENGATURAN AUTO TP & SL ==="
 input bool            InpEnableAutoTPSL   = true;  // Otomatis Pasang TP/SL untuk Posisi Baru?
 input int             InpTPPoints         = 1000;  // Jarak Take Profit (Points)
 input bool            InpUseSL            = false; // Aktifkan Stop Loss?
@@ -38,7 +34,7 @@ input int             InpSLPoints         = 500;   // Jarak Stop Loss (Points, j
 input int             InpMaxRetry         = 3;     // Maksimal percobaan pasang TP/SL jika gagal
 input int             InpRetryDelayMs     = 60;    // Delay antar retry (milidetik)
 
-input group "=== PENGATURAN RADAR RISIKO & ZONA KERANJANG ==="
+input group "=== PENGATURAN RADAR RISIKO & KERANJANG SALDO ==="
 input int             InpWarningPts       = 500;   // Jarak Pts ke SO: Batas Status WASPADA
 input int             InpDangerPts        = 200;   // Jarak Pts ke SO: Batas Status BAHAYA
 input bool            InpShowSOLine       = true;  // Gambar Garis Level Stop Out (MC) di Chart
@@ -54,6 +50,11 @@ input group "=== PENGATURAN BULK CLOSE & FILTER ==="
 input int             InpSlippage         = 30;    // Toleransi slippage (pts)
 input bool            InpTPSLCurrentOnly  = false; // Auto TP/SL: true = hanya chart ini, false = semua pair
 input long            InpMagicFilter      = 0;     // 0 = proses semua posisi (manual + EA lain)
+
+input group "=== PENGATURAN TAMPILAN PANEL (WIDESCREEN ANTI TUMPUK) ==="
+input int             InpWidth            = 430;   // Lebar Panel HUD (Pixel)
+input int             InpX                = 25;    // Posisi X dari kiri layar (Pixel)
+input int             InpY                = 35;    // Posisi Y dari atas layar (Pixel)
 
 //+------------------------------------------------------------------+
 //| [2] Definisi Warna & Gaya Tampilan (Modern Glassmorphism)         |
